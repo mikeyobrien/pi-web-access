@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- The MCP server's tool definitions shrink from about 7,000 to about 3,500 characters (about 1,750 to 900 tokens) on every request to the model. `provider` is now `string | string[]` instead of listing every provider name twice, and an unknown name is still rejected before any request, with the valid names in the error. Parameter descriptions use the same short wording as the Pi tools.
+
 ## [0.45.0] - 2026-10-25
 
 ### Highlights
