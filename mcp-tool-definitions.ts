@@ -15,10 +15,21 @@ function stringEnum(values: readonly string[], description: string) {
 // Kimi authenticates only through Pi's login, so it is never offered here.
 const MCP_SEARCH_PROVIDERS = RESOLVED_SEARCH_PROVIDERS.filter((provider) => provider !== "kimi");
 
+// Names are checked in validateMcpToolArguments instead of listed in the schema: the
+// provider enum, written for both the single and list forms, was ~1,060 characters per tool.
 const providerSchema = Type.Union([
-	stringEnum(["auto", "all", ...MCP_SEARCH_PROVIDERS], "Single provider."),
-	Type.Array(stringEnum(MCP_SEARCH_PROVIDERS, "Provider."), { minItems: 1 }),
-], { description: "Search provider, or a non-empty list of providers to search simultaneously. Omit or use auto for the configured provider; all searches every eligible provider. Providers without credentials return an error." });
+	Type.String(),
+	Type.Array(Type.String(), { minItems: 1 }),
+], { description: "auto, all, a name, or a list of names searched together; omit for the configured default." });
+const PROVIDER_CHOICES = `Use auto, all, or one or more of: ${MCP_SEARCH_PROVIDERS.join(", ")}.`;
+
+function providerProblem(value: unknown): string | undefined {
+	const invalid = typeof value === "string"
+		? (value === "auto" || value === "all" || MCP_SEARCH_PROVIDERS.includes(value as never) ? [] : [value])
+		: Array.isArray(value) ? value.filter((name) => !MCP_SEARCH_PROVIDERS.includes(name)) : [];
+	if (invalid.length === 0) return undefined;
+	return `/provider: unknown provider ${invalid.map((name) => JSON.stringify(name)).join(", ")}. ${PROVIDER_CHOICES}`;
+}
 
 const recencySchema = stringEnum(["day", "week", "month", "year"], "Filter results by recency.");
 const domainFilterSchema = Type.Array(Type.String(), { description: "Limit to domains; prefix with - to exclude." });
@@ -102,8 +113,13 @@ export const MCP_TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
 
 /** Returns human-readable validation problems; an empty array means the arguments are valid. */
 export function validateMcpToolArguments(tool: McpToolDefinition, args: unknown): string[] {
-	if (Value.Check(tool.inputSchema, args)) return [];
+	const checksProvider = (tool.inputSchema as { properties?: Record<string, unknown> }).properties?.provider !== undefined;
+	const provider = checksProvider && typeof args === "object" && args !== null
+		? providerProblem((args as { provider?: unknown }).provider)
+		: undefined;
+	if (Value.Check(tool.inputSchema, args)) return provider ? [provider] : [];
 	const problems = new Set<string>();
+	if (provider) problems.add(provider);
 	for (const error of Value.Errors(tool.inputSchema, args)) {
 		// additionalProperties also reports a per-property "schema is false"; the summary below names the property.
 		if (error.keyword === "boolean") continue;
