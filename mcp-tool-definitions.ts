@@ -8,8 +8,8 @@ import { Type, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { RESOLVED_SEARCH_PROVIDERS } from "./gemini-search.ts";
 
-function stringEnum(values: readonly string[], description: string) {
-	return Type.Unsafe<string>({ type: "string", enum: [...values], description });
+function stringEnum(values: readonly string[], description?: string) {
+	return Type.Unsafe<string>({ type: "string", enum: [...values], ...(description && { description }) });
 }
 
 // Kimi authenticates only through Pi's login, so it is never offered here.
@@ -31,10 +31,10 @@ function providerProblem(value: unknown): string | undefined {
 	return `/provider: unknown provider ${invalid.map((name) => JSON.stringify(name)).join(", ")}. ${PROVIDER_CHOICES}`;
 }
 
-const recencySchema = stringEnum(["day", "week", "month", "year"], "Filter results by recency.");
-const domainFilterSchema = Type.Array(Type.String(), { description: "Limit to domains; prefix with - to exclude." });
-const numResultsSchema = Type.Integer({ minimum: 1, maximum: 20, description: "Results per query (default: 5, max: 20)." });
-const proxySchema = Type.String({ description: "http(s) or socks proxy URL for this call's outbound requests; empty string forces direct access." });
+const recencySchema = stringEnum(["day", "week", "month", "year"]);
+const domainFilterSchema = Type.Array(Type.String(), { description: "Prefix - to exclude" });
+const numResultsSchema = Type.Integer({ minimum: 1, maximum: 20, description: "Default 5" });
+const proxySchema = Type.String({ description: "http(s) or socks proxy URL; \"\" forces direct" });
 // Page fetches write a page cache and clone GitHub URLs into a temp directory,
 // including the fetches behind includeContent and fetchContent.
 const fetchingAnnotations = { readOnlyHint: false, destructiveHint: false, openWorldHint: true };
@@ -49,15 +49,15 @@ export interface McpToolDefinition {
 export const MCP_TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
 	{
 		name: "web_search",
-		description: "Search the web and return bounded, source-linked results or provider answers. Full results are stored for retrieval with get_search_content using the returned responseId.",
+		description: "Search the web for sources or answers. Full results are stored for retrieval with get_search_content by responseId. Prefer 2-4 varied queries.",
 		inputSchema: Type.Object({
-			query: Type.Optional(Type.String({ description: "Single search query." })),
-			queries: Type.Optional(Type.Array(Type.String(), { description: "Multiple queries searched concurrently; vary angles for broader coverage." })),
+			query: Type.Optional(Type.String()),
+			queries: Type.Optional(Type.Array(Type.String(), { description: "Run concurrently; vary the angle" })),
 			numResults: Type.Optional(numResultsSchema),
-			includeContent: Type.Optional(Type.Boolean({ description: "Also fetch full page content for the results, retrievable with get_search_content." })),
+			includeContent: Type.Optional(Type.Boolean({ description: "Also fetch full page content" })),
 			recencyFilter: Type.Optional(recencySchema),
 			domainFilter: Type.Optional(domainFilterSchema),
-			category: Type.Optional(Type.String({ description: "Exa only: result category, e.g. news, research paper." })),
+			category: Type.Optional(Type.String({ description: "Exa only, e.g. news" })),
 			provider: Type.Optional(providerSchema),
 			proxy: Type.Optional(proxySchema),
 		}, { additionalProperties: false }),
@@ -65,43 +65,43 @@ export const MCP_TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
 	},
 	{
 		name: "fetch_content",
-		description: "Fetch URL(s) and return bounded content. Supports web pages, GitHub repositories, and PDFs. Full content is stored for retrieval with get_search_content using the returned responseId.",
+		description: "Fetch web pages, PDFs, and GitHub repos. Full content is stored for retrieval with get_search_content by responseId.",
 		inputSchema: Type.Object({
-			url: Type.Optional(Type.String({ description: "Single URL to fetch." })),
-			urls: Type.Optional(Type.Array(Type.String(), { description: "Multiple URLs fetched in parallel." })),
-			mode: Type.Optional(stringEnum(["readable", "raw"], "readable = extract readable content as markdown (default); raw = return the exact textual body using direct HTTP only.")),
-			forceClone: Type.Optional(Type.Boolean({ description: "Force cloning GitHub repositories that exceed the size threshold." })),
+			url: Type.Optional(Type.String()),
+			urls: Type.Optional(Type.Array(Type.String())),
+			mode: Type.Optional(stringEnum(["readable", "raw"], "readable (default): extract readable content as markdown; raw: return the exact textual body using direct HTTP only")),
+			forceClone: Type.Optional(Type.Boolean({ description: "Clone GitHub repos over the size limit" })),
 			proxy: Type.Optional(proxySchema),
 		}, { additionalProperties: false }),
 		annotations: fetchingAnnotations,
 	},
 	{
 		name: "get_search_content",
-		description: "Retrieve bounded pages of stored search results or fetched content from a previous web_search, fetch_content, or source_check call, or find matching passages with findText.",
+		description: "Page through or search stored content from web_search, source_check, or fetch_content by responseId.",
 		inputSchema: Type.Object({
-			responseId: Type.String({ description: "The responseId from web_search, fetch_content, or source_check." }),
-			query: Type.Optional(Type.String({ description: "Select stored results for this search query." })),
-			queryIndex: Type.Optional(Type.Integer({ minimum: 0, description: "Select stored results for the query at this index." })),
-			url: Type.Optional(Type.String({ description: "Select stored content for this URL." })),
-			urlIndex: Type.Optional(Type.Integer({ minimum: 0, description: "Select stored content for the URL at this index." })),
-			offset: Type.Optional(Type.Integer({ minimum: 0, description: "Character offset into the stored content (default 0). Ignored when findText is supplied." })),
-			limit: Type.Optional(Type.Integer({ minimum: 1, description: "Maximum characters to return. Ignored when findText is supplied." })),
+			responseId: Type.String(),
+			query: Type.Optional(Type.String()),
+			queryIndex: Type.Optional(Type.Integer({ minimum: 0 })),
+			url: Type.Optional(Type.String()),
+			urlIndex: Type.Optional(Type.Integer({ minimum: 0 })),
+			offset: Type.Optional(Type.Integer({ minimum: 0 })),
+			limit: Type.Optional(Type.Integer({ minimum: 1, description: "Characters, default the maximum" })),
 			findText: Type.Optional(Type.Union([
 				Type.String({ minLength: 1, maxLength: 500 }),
 				Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { minItems: 1, maxItems: 10 }),
-			], { description: "Text or texts to find in the selected stored content." })),
-			findMode: Type.Optional(stringEnum(["exact", "case-insensitive", "fuzzy"], "Matching mode for findText (default: case-insensitive).")),
+			], { description: "Find passages instead of paging" })),
+			findMode: Type.Optional(stringEnum(["exact", "case-insensitive", "fuzzy"])),
 		}, { additionalProperties: false }),
 		annotations: { readOnlyHint: true, openWorldHint: false },
 	},
 	{
 		name: "source_check",
-		description: "Gather web sources for a claim and return a bounded machine-readable research artifact with exact passage citations for manual review.",
+		description: "Gather cited web passages about a claim for manual review.",
 		inputSchema: Type.Object({
-			claim: Type.String({ description: "The assertion to gather web sources for." }),
-			queries: Type.Optional(Type.Array(Type.String(), { description: "Search queries (default: the claim)." })),
+			claim: Type.String({ description: "Assertion to check" }),
+			queries: Type.Optional(Type.Array(Type.String(), { description: "Default: the claim" })),
 			numResults: Type.Optional(numResultsSchema),
-			fetchContent: Type.Optional(Type.Boolean({ description: "Fetch up to 5 result pages for exact passage extraction." })),
+			fetchContent: Type.Optional(Type.Boolean({ description: "Fetch top 5 pages for exact passages" })),
 			recencyFilter: Type.Optional(recencySchema),
 			domainFilter: Type.Optional(domainFilterSchema),
 			provider: Type.Optional(providerSchema),
